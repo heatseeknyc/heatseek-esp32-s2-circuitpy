@@ -4,3 +4,5 @@ bundles
 build_deps
 build-circuitpython*
 secrets.py
+temperature.txt
+boot_out.txt
