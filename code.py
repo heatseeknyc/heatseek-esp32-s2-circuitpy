@@ -26,8 +26,17 @@ CODE_VERSION = "F-ESP-1.3.0"
 ## TODO Write out all readings in the queue
 ## TODO deep sleep if year == 2000 and couldn't fetch time
 
+## CELL SETUP - SARA-R410M
+## Set up pins for the cell device correctly in case we're plugged into it
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
+
+power_pin = digitalio.DigitalInOut(board.D9)
+power_pin.direction = digitalio.Direction.INPUT
+
+reset_pin = digitalio.DigitalInOut(board.D10)
+reset_pin.direction = digitalio.Direction.INPUT
+#####################
 
 print("Starting up, blink slow then fast for 6 sec")
 for x in range(8):
