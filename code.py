@@ -11,6 +11,7 @@ import wifi
 import socketpool
 import adafruit_requests
 import rtc
+import supervisor
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
@@ -26,11 +27,16 @@ CODE_VERSION = "F-ESP-1.3.0"
 ## TODO Write out all readings in the queue
 ## TODO deep sleep if year == 2000 and couldn't fetch time
 
-## CELL SETUP - SARA-R410M
-## Set up pins for the cell device correctly in case we're plugged into it
+## TODO 2022-10-06
+## See if the USB connection status logs properly to the text file when plugged into the wall
+## If it does, then use that to remove the transit file with os.remove IF it's 5 minutes after file creation and usb_connected == True
+
+
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
 
+## CELL SETUP - SARA-R410M
+## Set up pins for the cell device correctly in case we're plugged into it
 power_pin = digitalio.DigitalInOut(board.D9)
 power_pin.direction = digitalio.Direction.INPUT
 
@@ -55,10 +61,10 @@ try:
     i2c = board.I2C()  # uses board.SCL and board.SDA
     sensor = adafruit_ahtx0.AHTx0(i2c)
     # If the sensor is connected, go to read only mode so we can write temperatures
-    print("Sensor detected, writing to temperatures.txt, CIRCUITPY is readonly by computer")
+    print("\nSENSOR DETECTED, attempting to writing to temperatures.txt, CIRCUITPY is read-only by computer")
     # storage.remount("", switch.value)
 except ValueError:
-    print("No sensor, not writing to temperatures.txt CIRCUITPY is writable by computer")
+    print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is writable by computer")
 
 
 
@@ -101,12 +107,10 @@ try:
         # do the C-to-F conversion here if you would like
         print("writing to file")
         timestring = '{}-{}-{} {}:{}:{}'.format(r.datetime.tm_year, r.datetime.tm_mon, r.datetime.tm_mday, r.datetime.tm_hour, r.datetime.tm_min, r.datetime.tm_sec)
-        print('{},{},{}'.format(timestring, ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
-        fp.write('{},{},{}\n'.format(timestring, ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
+        print('{},{},{}, usb:{}'.format(timestring, ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, str(supervisor.runtime.usb_connected)))
+        fp.write('{},{},{}, usb:{}\n'.format(timestring, ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, str(supervisor.runtime.usb_connected)))
         fp.flush()
-
-        # sensor.temperature
-        # sensor.relative_humidity
+        fp.close()
 
         heatseek_data = {
             "hub":"featherhub",
@@ -120,22 +124,24 @@ try:
 
         response = requests.post(HEATSEEK_URL, data=heatseek_data)
         if response.status_code == 200:
-            print(f"System Time: {r.datetime}")
+            print("SUCCESS sending to Heat Seek at {}".format(timestring))
         else:
             print("Sending heatseek data failed")
 
         # Create an alarm that will trigger at the next reading interval seconds from now.
-        
+        print('Deep sleep for reading interval ({}) until the next send'.format( int(secrets["reading_interval"])))
         time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + int(secrets["reading_interval"]))
         # Exit the program, and then deep sleep until the alarm wakes us.
         alarm.exit_and_deep_sleep_until_alarms(time_alarm)
         # Does not return, so we never get here.
 except OSError as e:  # Typically when the filesystem isn't writeable...
     if e.args[0] == 28:  # If the file system is full...
-        print("filesystem full")
-    print("not writing temp to file")
-    print("Deep sleep for 1 hour and try again")
-    time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 3600)
+        print("\nERROR: filesystem full\n")
+    print("\nWARN: not writing temp to file, or sending to Heat Seek")
+    print("This is  likely because sensor is not attached and the filesystem was writable by USB")
+    print("If this is unexpected, be sure you reset the feather after plugging in the sensor to run boot.py again.")
+    print('Deep sleep for reading interval ({}) and try again'.format( int(secrets["reading_interval"])))
+    time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + int(secrets["reading_interval"]))
     alarm.exit_and_deep_sleep_until_alarms(time_alarm)
     while True: 
         ## Code should never get here because we exit above

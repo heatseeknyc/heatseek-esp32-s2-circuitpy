@@ -2,6 +2,7 @@ build/*
 .vscode/*
 .env
 .DS_Store
+*/.DS_Store
 bundles
 build_deps
 build-circuitpython*

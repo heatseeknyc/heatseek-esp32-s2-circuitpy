@@ -3,7 +3,6 @@
 import board
 import digitalio
 import storage
-import board
 import adafruit_ahtx0
 
 led = digitalio.DigitalInOut(board.LED)
@@ -11,9 +10,6 @@ led.direction = digitalio.Direction.OUTPUT
 
 ## CELL SETUP - SARA-R410M
 ## Set up pins for the cell device correctly in case we're plugged into it
-led = digitalio.DigitalInOut(board.LED)
-led.direction = digitalio.Direction.OUTPUT
-
 power_pin = digitalio.DigitalInOut(board.D9)
 power_pin.direction = digitalio.Direction.INPUT
 
