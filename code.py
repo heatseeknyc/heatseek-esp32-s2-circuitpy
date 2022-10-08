@@ -12,6 +12,9 @@ import socketpool
 import adafruit_requests
 import rtc
 import supervisor
+from adafruit_lc709203f import LC709203F
+
+
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
@@ -30,6 +33,7 @@ CODE_VERSION = "F-ESP-1.3.0"
 ## TODO 2022-10-06
 ## See if the USB connection status logs properly to the text file when plugged into the wall
 ## If it does, then use that to remove the transit file with os.remove IF it's 5 minutes after file creation and usb_connected == True
+## Time is wrong in the wrong direction, thinks it's 5am at 11am
 
 
 led = digitalio.DigitalInOut(board.LED)
@@ -57,6 +61,15 @@ print("Blinking done, now startinging the program")
 r = rtc.RTC()
 print(f"Time at start: {r.datetime}")
 
+## Check on the battery
+print("LC709203F simple test")
+print("Make sure LiPoly battery is plugged into the board!")
+
+battery_sensor = LC709203F(board.I2C())
+
+print("IC version:", hex(battery_sensor.ic_version))
+print("Battery: Mode: %s / %0.3f Volts / %0.1f %%" % (battery_sensor.power_mode, battery_sensor.cell_voltage, battery_sensor.cell_percent))
+
 try:
     i2c = board.I2C()  # uses board.SCL and board.SDA
     sensor = adafruit_ahtx0.AHTx0(i2c)
@@ -64,7 +77,7 @@ try:
     print("\nSENSOR DETECTED, attempting to writing to temperatures.txt, CIRCUITPY is read-only by computer")
     # storage.remount("", switch.value)
 except ValueError:
-    print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is writable by computer")
+    print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is wrietable by computer")
 
 
 
@@ -76,6 +89,7 @@ except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
 
+reading_interval = int(secrets["reading_interval"])
 
 print("Connecting to %s"%secrets["ssid"])
 wifi.radio.connect(secrets["ssid"], secrets["password"])
@@ -92,7 +106,7 @@ if not alarm.wake_alarm:
 
     response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
     if response.status_code == 200:
-        r.datetime = time.localtime(response.json()['unixtime'] + response.json()['raw_offset'])
+        r.datetime = time.localtime(response.json()['unixtime'])
         print(f"System Time: {r.datetime}")
     else:
         print("Setting time failed")
@@ -106,11 +120,14 @@ try:
     with open("/temperature.txt", "a") as fp:
         # do the C-to-F conversion here if you would like
         print("writing to file")
-        timestring = '{}-{}-{} {}:{}:{}'.format(r.datetime.tm_year, r.datetime.tm_mon, r.datetime.tm_mday, r.datetime.tm_hour, r.datetime.tm_min, r.datetime.tm_sec)
-        print('{},{},{}, usb:{}'.format(timestring, ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, str(supervisor.runtime.usb_connected)))
-        fp.write('{},{},{}, usb:{}\n'.format(timestring, ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, str(supervisor.runtime.usb_connected)))
+        # ensure the time matches the RTC's time
+        time.struct_time(r.datetime)
+        print('{},{},{},{},{}'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, battery_sensor.power_mode, battery_sensor.cell_voltage))
+        fp.write('{},{},{},{},{}\n'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, battery_sensor.power_mode, battery_sensor.cell_voltage))
         fp.flush()
         fp.close()
+
+        
 
         heatseek_data = {
             "hub":"featherhub",
@@ -124,13 +141,15 @@ try:
 
         response = requests.post(HEATSEEK_URL, data=heatseek_data)
         if response.status_code == 200:
-            print("SUCCESS sending to Heat Seek at {}".format(timestring))
+            print("SUCCESS sending to Heat Seek at {}".format(time.time()))
         else:
             print("Sending heatseek data failed")
 
         # Create an alarm that will trigger at the next reading interval seconds from now.
-        print('Deep sleep for reading interval ({}) until the next send'.format( int(secrets["reading_interval"])))
-        time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + int(secrets["reading_interval"]))
+        print('Deep sleep for reading interval ({}) until the next send'.format( reading_interval))
+        time_to_wake = time.monotonic() + reading_interval
+        # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
+        time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
         # Exit the program, and then deep sleep until the alarm wakes us.
         alarm.exit_and_deep_sleep_until_alarms(time_alarm)
         # Does not return, so we never get here.
@@ -140,8 +159,10 @@ except OSError as e:  # Typically when the filesystem isn't writeable...
     print("\nWARN: not writing temp to file, or sending to Heat Seek")
     print("This is  likely because sensor is not attached and the filesystem was writable by USB")
     print("If this is unexpected, be sure you reset the feather after plugging in the sensor to run boot.py again.")
-    print('Deep sleep for reading interval ({}) and try again'.format( int(secrets["reading_interval"])))
-    time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + int(secrets["reading_interval"]))
+    print('Deep sleep for reading interval ({}) and try again'.format(reading_interval))
+    time_to_wake = time.monotonic() + reading_interval
+    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
+    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
     alarm.exit_and_deep_sleep_until_alarms(time_alarm)
     while True: 
         ## Code should never get here because we exit above

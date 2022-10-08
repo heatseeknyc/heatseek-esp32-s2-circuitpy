@@ -1,0 +1,16 @@
+## "Quiet" Mode note
+# TL;DR - create quiet.txt in this CIRCUITPY folder before sending the device to users
+#
+# INSTRUCTIONS
+# To avoid transmission of readings while the device is in transit to a user, you
+# can enable "quiet" mode by creating a file called quiet.txt in this CIRCUITPY folder.
+#
+# You can copy or rename this file to quiet.txt or create a new file.
+# The file's contents do not matter. 
+#
+# When the device sees the battery's charge level increase, it will assume it has
+# been received and powered on by the end user. NOTE, the battery must be partially
+# depleted to see that its charge has increased. 
+#
+# The device will then automatically remove quiet.txt and begin transmitting 
+# readings. It will continue to transmit until quiet.txt is manually recreated.
