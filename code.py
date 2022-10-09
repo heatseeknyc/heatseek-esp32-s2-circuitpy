@@ -14,6 +14,68 @@ import rtc
 import os 
 from adafruit_lc709203f import LC709203F
 
+# Get wifi details and more from a secrets.py file
+try:
+    from secrets import secrets
+except ImportError:
+    print("WiFi secrets are kept in secrets.py, please add them there!")
+    raise
+
+
+def deep_sleep(secs):
+    # go to sleep for an hour and see if it's time to wake up from quiet mode next time
+    time_to_wake = time.monotonic() + secs
+    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
+    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
+    # Exit the program, and then deep sleep until the alarm wakes us.
+    alarm.exit_and_deep_sleep_until_alarms(time_alarm)
+## END OF FUNCTION deep_sleep
+
+def handle_quiet_mode(new_voltage):
+    # return if no file
+    if 'quiet.txt' not in os.listdir(): return
+    print("QUIET MODE DETECTED - quiet.txt exists, checking voltage against battery.txt")
+    # Okay, we've got a quiet.txt. Sleep unless the battery is charging
+    # See quiet.txt.example for more info
+    if 'battery.txt' in os.listdir():
+        f = open('battery.txt',"r")
+        ## get and parse it's data
+        last_voltage = f.read().splitlines()[0]
+        f.close()
+        print('QUIET MODE DATA - new voltage:{}, last_voltage:{}'.format(new_voltage, last_voltage))
+        if(new_voltage > float(last_voltage) + 0.12):
+            print("QUIET MODE ENDED - battery is charging. Unit must be plugged in")
+            print("Clearing battery.txt and quiet.txt")
+            # Higher voltage even with some offset! We're plugged in
+            # and charging. Clear the quiet and return. 
+            os.remove('battery.txt')
+            os.remove('quiet.txt')
+            return
+        else:
+            # Lower voltage, update the battery.txt file
+            if(new_voltage < float(last_voltage)):
+                # overwrite file with new lower voltages, don't write higher voltages
+                # we're keeping a "low water mark" here
+                print("QUIET MODE: overwriting battery.txt low water mark")
+                with open('battery.txt', "w") as bf:
+                    bf.write('{}\n'.format(new_voltage))
+            # Either way, go to sleep for an hour and see if it's time to wake up from quiet mode next time
+            time_to_wake = time.monotonic() + 3600
+            # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
+            time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
+            # Exit the program, and then deep sleep until the alarm wakes us.
+            print("QUIET MODE: Sleeping for 1 hr")
+            alarm.exit_and_deep_sleep_until_alarms(time_alarm)
+    else:
+        print("QUIET MODE: writing new battery.txt")
+        with open('battery.txt', "w") as bf:
+            bf.write('{}\n'.format(new_voltage))
+            print("QUIET MODE: Sleeping for 1 hr")
+            deep_sleep(3600)
+            
+## END OF FUNCTION handle_quiet_mode
+
+
 def transmit_queue(requests):
     print("Entered function: transmit_queue")
     if 'queue' not in os.listdir(): return
@@ -59,22 +121,6 @@ def transmit_queue(requests):
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
 CODE_VERSION = "F-ESP-1.3.0"
 
-## TODO
-## DONE Switch filesystem to read only if the sensor is attached
-## DONE Switch back to writeable filesystem if sensor is detached (or other switch? battery attached?)
-## DONE Write temperatures to the file
-## DONE temperatures to the Heatseek service
-## DONE set a variable in sleep memory to test if RTC is persistent across deep sleep
-## TODO Write separate log and queue files
-## TODO Write out all readings in the queue
-## TODO deep sleep if year == 2000 and couldn't fetch time
-
-## TODO 2022-10-06
-## See if the USB connection status logs properly to the text file when plugged into the wall
-## If it does, then use that to remove the transit file with os.remove IF it's 5 minutes after file creation and usb_connected == True
-## Time is wrong in the wrong direction, thinks it's 5am at 11am
-
-
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
 
@@ -119,15 +165,6 @@ except ValueError:
     print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is wrietable by computer")
 
 
-
-
-# Get wifi details and more from a secrets.py file
-try:
-    from secrets import secrets
-except ImportError:
-    print("WiFi secrets are kept in secrets.py, please add them there!")
-    raise
-
 reading_interval = int(secrets["reading_interval"])
 net_connected = False
 try: 
@@ -165,11 +202,7 @@ time.struct_time(r.datetime)
 ##   (greater than oct 10 2022 timestamp 1665240748), sleep if not
 if(time.time() < 1665240748):
     print('Time is invalid. Sleeping for 5 minutes')
-    time_to_wake = time.monotonic() + 300
-    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
-    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
-    # Exit the program, and then deep sleep until the alarm wakes us.
-    alarm.exit_and_deep_sleep_until_alarms(time_alarm)
+    deep_sleep(300)
 
 ## We have a valid time, write out temperature.txt and try to transmit
 try:
@@ -180,6 +213,8 @@ try:
         fp.write('{},{},{},{},{}\n'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, battery_sensor.power_mode, battery_sensor.cell_voltage))
         fp.flush()
         fp.close()
+
+    handle_quiet_mode(battery_sensor.cell_voltage)
 
     heatseek_data = {
         "hub":"featherhub",
@@ -213,11 +248,7 @@ try:
 
     # Create an alarm that will trigger at the next reading interval seconds from now.
     print('Deep sleep for reading interval ({}) until the next send'.format( reading_interval))
-    time_to_wake = time.monotonic() + reading_interval
-    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
-    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
-    # Exit the program, and then deep sleep until the alarm wakes us.
-    alarm.exit_and_deep_sleep_until_alarms(time_alarm)
+    deep_sleep(reading_interval)
 except OSError as e:  # Typically when the filesystem isn't writeable...
     if e.args[0] == 28:  # If the file system is full...
         print("\nERROR: filesystem full\n")
@@ -225,10 +256,4 @@ except OSError as e:  # Typically when the filesystem isn't writeable...
     print("This is  likely because sensor is not attached and the filesystem was writable by USB")
     print("If this is unexpected, be sure you reset the feather after plugging in the sensor to run boot.py again.")
     print('Deep sleep for reading interval ({}) and try again'.format(reading_interval))
-    time_to_wake = time.monotonic() + reading_interval
-    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
-    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
-    alarm.exit_and_deep_sleep_until_alarms(time_alarm)
-
-
-        
+    deep_sleep(reading_interval)
