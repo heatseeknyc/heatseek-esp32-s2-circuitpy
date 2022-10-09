@@ -11,10 +11,49 @@ import wifi
 import socketpool
 import adafruit_requests
 import rtc
-import supervisor
+import os 
 from adafruit_lc709203f import LC709203F
 
-
+def transmit_queue(requests):
+    print("Entered function: transmit_queue")
+    if 'queue' not in os.listdir(): return
+    qfiles = os.listdir('/queue/')
+    for qfile in qfiles:
+        if not qfile.startswith('1'):
+            print('Removing extraneous file in queue /queue/{}'.format(qfile))
+            os.remove('/queue/{}'.format(qfile))
+        if not qfile.endswith('.txt'):
+            print('Removing extraneous file in queue /queue/{}'.format(qfile))
+            os.remove('/queue/{}'.format(qfile))
+        ## File looks legit, open it
+        print("opening queued file /queue/{}".format(qfile))
+        f = open('/queue/{}'.format(qfile),"r")
+        ## get and parse it's data
+        qdata = f.read().splitlines()[0].split(',')
+        f.close()
+        ## make our heatseek data object with that queued data
+        heatseek_data = {
+            "hub":"featherhub",
+            "cell": secrets["cell_id"],
+            "time": qdata[0],
+            "temp": qdata[1],
+            "humidity": qdata[2],
+            "sp": secrets["reading_interval"],
+            "cell_version": CODE_VERSION,
+        }
+        ## try sending it, we already know we have a connection or we 
+        ## wouldn't get to the transmit_queue function
+        send_success = False
+        print("Sending queued data file /queue/{}".format(qfile))
+        response = requests.post(HEATSEEK_URL, data=heatseek_data)
+        if response.status_code == 200:
+            print("SUCCESS sending queued to Heat Seek at {}".format(time.time()))
+            send_success = True
+            os.remove('/queue/{}'.format(qfile))
+        else:
+            print("Sending queued heatseek data failed")
+            return False
+## END OF FUNCTION - transmit_queue(requests)
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
@@ -25,7 +64,7 @@ CODE_VERSION = "F-ESP-1.3.0"
 ## DONE Switch back to writeable filesystem if sensor is detached (or other switch? battery attached?)
 ## DONE Write temperatures to the file
 ## DONE temperatures to the Heatseek service
-## TODO set a variable in sleep memory to test if RTC is persistent across deep sleep
+## DONE set a variable in sleep memory to test if RTC is persistent across deep sleep
 ## TODO Write separate log and queue files
 ## TODO Write out all readings in the queue
 ## TODO deep sleep if year == 2000 and couldn't fetch time
@@ -90,69 +129,95 @@ except ImportError:
     raise
 
 reading_interval = int(secrets["reading_interval"])
+net_connected = False
+try: 
+    print("Connecting to %s"%secrets["ssid"])
+    wifi.radio.connect(secrets["ssid"], secrets["password"])
+    print("Connected to %s!"%secrets["ssid"])
+    print("My IP address is", wifi.radio.ipv4_address)
 
-print("Connecting to %s"%secrets["ssid"])
-wifi.radio.connect(secrets["ssid"], secrets["password"])
-print("Connected to %s!"%secrets["ssid"])
-print("My IP address is", wifi.radio.ipv4_address)
+    ## Set up http request objects
+    pool = socketpool.SocketPool(wifi.radio)
+    requests = adafruit_requests.Session(pool, ssl.create_default_context())
+    net_connected = True
+    ## Set the time if this is a cold boot
+    if not alarm.wake_alarm:
+        print("Cold boot. Fetching updated time and setting realtime clock")
 
-## Set up http request objects
-pool = socketpool.SocketPool(wifi.radio)
-requests = adafruit_requests.Session(pool, ssl.create_default_context())
-
-## Set the time if this is a cold boot
-if not alarm.wake_alarm:
-    print("Cold boot. Fetching updated time and setting realtime clock")
-
-    response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
-    if response.status_code == 200:
-        r.datetime = time.localtime(response.json()['unixtime'])
-        print(f"System Time: {r.datetime}")
+        response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
+        if response.status_code == 200:
+            r.datetime = time.localtime(response.json()['unixtime'])
+            print(f"System Time: {r.datetime}")
+        else:
+            print("Setting time failed")
     else:
-        print("Setting time failed")
-else:
-    print("Waking up from sleep, RTC value after deep sleep was ")
-    print(f"System Time: {r.datetime}")
+        print("Waking up from sleep, RTC value after deep sleep was ")
+        print(f"System Time: {r.datetime}")
+except ConnectionError:
+    print("Could not connect to network.")
+    net_connected = False
 
 
+# ensure the time matches the RTC's time
+time.struct_time(r.datetime)
 
+## Check if the time is valid 
+##   (greater than oct 10 2022 timestamp 1665240748), sleep if not
+if(time.time() < 1665240748):
+    print('Time is invalid. Sleeping for 5 minutes')
+    time_to_wake = time.monotonic() + 300
+    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
+    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
+    # Exit the program, and then deep sleep until the alarm wakes us.
+    alarm.exit_and_deep_sleep_until_alarms(time_alarm)
+
+## We have a valid time, write out temperature.txt and try to transmit
 try:
     with open("/temperature.txt", "a") as fp:
         # do the C-to-F conversion here if you would like
         print("writing to file")
-        # ensure the time matches the RTC's time
-        time.struct_time(r.datetime)
         print('{},{},{},{},{}'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, battery_sensor.power_mode, battery_sensor.cell_voltage))
         fp.write('{},{},{},{},{}\n'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity, battery_sensor.power_mode, battery_sensor.cell_voltage))
         fp.flush()
         fp.close()
 
-        
-
-        heatseek_data = {
-            "hub":"featherhub",
-            "cell": secrets["cell_id"],
-            "time": time.time(),
-            "temp": ((sensor.temperature * 1.8) + 32),
-            "humidity": sensor.relative_humidity,
-            "sp": secrets["reading_interval"],
-            "cell_version": CODE_VERSION,
-        }
-
+    heatseek_data = {
+        "hub":"featherhub",
+        "cell": secrets["cell_id"],
+        "time": time.time(),
+        "temp": ((sensor.temperature * 1.8) + 32),
+        "humidity": sensor.relative_humidity,
+        "sp": secrets["reading_interval"],
+        "cell_version": CODE_VERSION,
+    }
+    send_success = False
+    if(net_connected): 
         response = requests.post(HEATSEEK_URL, data=heatseek_data)
         if response.status_code == 200:
             print("SUCCESS sending to Heat Seek at {}".format(time.time()))
+            send_success = True
+            transmit_queue(requests)
         else:
             print("Sending heatseek data failed")
 
-        # Create an alarm that will trigger at the next reading interval seconds from now.
-        print('Deep sleep for reading interval ({}) until the next send'.format( reading_interval))
-        time_to_wake = time.monotonic() + reading_interval
-        # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
-        time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
-        # Exit the program, and then deep sleep until the alarm wakes us.
-        alarm.exit_and_deep_sleep_until_alarms(time_alarm)
-        # Does not return, so we never get here.
+
+    if(send_success == False):
+        if 'queue' not in os.listdir():
+            os.mkdir('queue')
+        with open("/queue/{}.txt".format(time.time()), "a") as qp:
+            print("Couldn't send, writing a queue file")
+            print('{},{},{}'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
+            qp.write('{},{},{}\n'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
+            qp.flush()
+            qp.close()
+
+    # Create an alarm that will trigger at the next reading interval seconds from now.
+    print('Deep sleep for reading interval ({}) until the next send'.format( reading_interval))
+    time_to_wake = time.monotonic() + reading_interval
+    # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
+    time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
+    # Exit the program, and then deep sleep until the alarm wakes us.
+    alarm.exit_and_deep_sleep_until_alarms(time_alarm)
 except OSError as e:  # Typically when the filesystem isn't writeable...
     if e.args[0] == 28:  # If the file system is full...
         print("\nERROR: filesystem full\n")
@@ -164,7 +229,6 @@ except OSError as e:  # Typically when the filesystem isn't writeable...
     # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
     time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
     alarm.exit_and_deep_sleep_until_alarms(time_alarm)
-    while True: 
-        ## Code should never get here because we exit above
-        print("waiting to sleep...")
-        sleep(1)
+
+
+        
