@@ -21,6 +21,13 @@ except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
 
+## URL
+HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
+CODE_VERSION = "F-ESP-1.3.0"
+VOLT_DIFF_FOR_CHARGE = 0.6
+QUIET_MODE_SLEEP_LENGTH = 600
+
+## FUNCTIONS
 
 def deep_sleep(secs):
     # go to sleep for an hour and see if it's time to wake up from quiet mode next time
@@ -43,7 +50,7 @@ def handle_quiet_mode(new_voltage):
         last_voltage = f.read().splitlines()[0]
         f.close()
         print('QUIET MODE DATA - new voltage:{}, last_voltage:{}'.format(new_voltage, last_voltage))
-        if(new_voltage > float(last_voltage) + 0.12):
+        if(new_voltage > float(last_voltage) + VOLT_DIFF_FOR_CHARGE):
             print("QUIET MODE ENDED - battery is charging. Unit must be plugged in")
             print("Clearing battery.txt and quiet.txt")
             # Higher voltage even with some offset! We're plugged in
@@ -60,7 +67,7 @@ def handle_quiet_mode(new_voltage):
                 with open('battery.txt', "w") as bf:
                     bf.write('{}\n'.format(new_voltage))
             # Either way, go to sleep for an hour and see if it's time to wake up from quiet mode next time
-            time_to_wake = time.monotonic() + 3600
+            time_to_wake = time.monotonic() + QUIET_MODE_SLEEP_LENGTH
             # set the time alarm, notice that monotonic_time here is a named argument and must be set in the function call
             time_alarm = alarm.time.TimeAlarm(monotonic_time=time_to_wake)
             # Exit the program, and then deep sleep until the alarm wakes us.
@@ -71,7 +78,7 @@ def handle_quiet_mode(new_voltage):
         with open('battery.txt', "w") as bf:
             bf.write('{}\n'.format(new_voltage))
             print("QUIET MODE: Sleeping for 1 hr")
-            deep_sleep(3600)
+            deep_sleep(QUIET_MODE_SLEEP_LENGTH)
             
 ## END OF FUNCTION handle_quiet_mode
 
@@ -117,9 +124,7 @@ def transmit_queue(requests):
             return False
 ## END OF FUNCTION - transmit_queue(requests)
 
-## URL
-HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
-CODE_VERSION = "F-ESP-1.3.0"
+## MAIN CODE BLOCK
 
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
