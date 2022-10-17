@@ -24,7 +24,7 @@ except ImportError:
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
 CODE_VERSION = "F-ESP-1.3.0"
-VOLT_DIFF_FOR_CHARGE = 0.6
+VOLT_DIFF_FOR_CHARGE = 0.03
 QUIET_MODE_SLEEP_LENGTH = 600
 
 ## FUNCTIONS
