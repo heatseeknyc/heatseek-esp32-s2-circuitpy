@@ -13,13 +13,95 @@ import adafruit_requests
 import rtc
 import os 
 from adafruit_lc709203f import LC709203F
+import digitalio
+import adafruit_requests as requests
+from adafruit_fona.adafruit_fona import FONA
+from adafruit_fona.fona_3g import FONA3G
+import adafruit_fona.adafruit_fona_network as network
+import adafruit_fona.adafruit_fona_socket as cellular_socket
 
+##################
+## FONA TESTING
+###################
+
+power_pin = digitalio.DigitalInOut(board.D9)
+power_pin.direction = digitalio.Direction.INPUT
+
+reset_pin = digitalio.DigitalInOut(board.D10)
+reset_pin.direction = digitalio.Direction.INPUT
+
+LTE_SHIELD_POWER_PULSE_PERIOD = 3.2
+LTE_RESET_PULSE_PERIOD = 10.0
+
+print("power pulse")
+# Initialize the modem
+power_pin.switch_to_output()
+power_pin.value = False
+time.sleep(LTE_SHIELD_POWER_PULSE_PERIOD)
+# power_pin.switch_to_input()
+
+# reset_pin.switch_to_output(drive_mode=digitalio.DriveMode.OPEN_DRAIN)
+# reset_pin.value = True
+# time.sleep(LTE_RESET_PULSE_PERIOD)
+# reset_pin.value = False
+# reset_pin.switch_to_input()
+
+uart = busio.UART(board.TX, board.RX, baudrate=9600)
+# uart = board.UART()
+fona = FONA(uart, reset_pin)
+
+# Initialize cellular data network
+network = network.CELLULAR(fona, ("ting", '', ''))
+
+
+###########
+
+while not network.is_attached:
+    print("Attaching to network...")
+    time.sleep(0.5)
+print("Attached!")
+
+# while not network.is_connected:
+#     print("Connecting to network...")
+#     network.connect()
+#     time.sleep(0.5)
+# print("Network Connected!")
+
+###########
 # Get wifi details and more from a secrets.py file
 try:
     from secrets import secrets
 except ImportError:
     print("WiFi secrets are kept in secrets.py, please add them there!")
     raise
+###########
+print("My IP address is:", fona.local_ip)
+print("IP lookup adafruit.com: %s" % fona.get_host_by_name("adafruit.com"))
+
+# Initialize a requests object with a socket and cellular interface
+requests.set_socket(cellular_socket, fona)
+
+# fona._debug = True
+TEXT_URL = "http://wifitest.adafruit.com/testwifi/index.html"
+JSON_URL = "http://api.coindesk.com/v1/bpi/currentprice/USD.json"
+print("Fetching text from", TEXT_URL)
+r = requests.get(TEXT_URL)
+print("-" * 40)
+print(r.text)
+print("-" * 40)
+r.close()
+
+print()
+print("Fetching json from", JSON_URL)
+r = requests.get(JSON_URL)
+print("-" * 40)
+print(r.json())
+print("-" * 40)
+r.close()
+print("Done!")
+
+###################
+
 
 
 def deep_sleep(secs):
