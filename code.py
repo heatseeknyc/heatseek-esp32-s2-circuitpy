@@ -23,7 +23,7 @@ except ImportError:
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
-CODE_VERSION = "F-ESP-1.3.0"
+CODE_VERSION = "F-ESP-1.3.1"
 VOLT_DIFF_FOR_CHARGE = 0.03
 QUIET_MODE_SLEEP_LENGTH = 600
 
@@ -131,11 +131,11 @@ led.direction = digitalio.Direction.OUTPUT
 
 ## CELL SETUP - SARA-R410M
 ## Set up pins for the cell device correctly in case we're plugged into it
-power_pin = digitalio.DigitalInOut(board.D9)
-power_pin.direction = digitalio.Direction.INPUT
+# power_pin = digitalio.DigitalInOut(board.D9)
+# power_pin.direction = digitalio.Direction.INPUT
 
-reset_pin = digitalio.DigitalInOut(board.D10)
-reset_pin.direction = digitalio.Direction.INPUT
+# reset_pin = digitalio.DigitalInOut(board.D10)
+# reset_pin.direction = digitalio.Direction.INPUT
 #####################
 
 print("Starting up, blink slow then fast for 6 sec")
@@ -167,7 +167,7 @@ try:
     print("\nSENSOR DETECTED, attempting to writing to temperatures.txt, CIRCUITPY is read-only by computer")
     # storage.remount("", switch.value)
 except ValueError:
-    print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is wrietable by computer")
+    print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is writeable by computer")
 
 
 reading_interval = int(secrets["reading_interval"])
@@ -198,7 +198,12 @@ try:
 except ConnectionError:
     print("Could not connect to network.")
     net_connected = False
-
+except ValueError:
+    print("Time response was invalid (no connection or bad data)")
+    net_connected = False
+except:
+    print("An error occured connecting to the network or time server")
+    net_connected = False
 
 # ensure the time matches the RTC's time
 time.struct_time(r.datetime)
@@ -206,8 +211,8 @@ time.struct_time(r.datetime)
 ## Check if the time is valid 
 ##   (greater than oct 10 2022 timestamp 1665240748), sleep if not
 if(time.time() < 1665240748):
-    print('Time is invalid. Sleeping for 5 minutes')
-    deep_sleep(300)
+    print('Time is invalid. Sleeping for ' + str(QUIET_MODE_SLEEP_LENGTH / 60) + ' minutes')
+    deep_sleep(QUIET_MODE_SLEEP_LENGTH)
 
 ## We have a valid time, write out temperature.txt and try to transmit
 try:
