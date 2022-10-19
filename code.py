@@ -173,15 +173,31 @@ except ValueError:
 reading_interval = int(secrets["reading_interval"])
 net_connected = False
 try: 
-    print("Connecting to %s"%secrets["ssid"])
-    wifi.radio.connect(secrets["ssid"], secrets["password"])
-    print("Connected to %s!"%secrets["ssid"])
-    print("My IP address is", wifi.radio.ipv4_address)
+    ## #########
+    ## Internal "try" statement attempts to connect to both the tenant wifi
+    ## and the heatseek wifi, so that in almost all cases we get a valid datetime
+    ## on first boot and can use that to keep time during transit
+    try:
+        print("Connecting to %s"%secrets["tenant_wifi_ssid"])
+        wifi.radio.connect(secrets["tenant_wifi_ssid"], secrets["tenant_wifi_password"])
+        print("Connected to %s!"%secrets["tenant_wifi_ssid"])
+        print("My IP address is", wifi.radio.ipv4_address)
 
-    ## Set up http request objects
-    pool = socketpool.SocketPool(wifi.radio)
-    requests = adafruit_requests.Session(pool, ssl.create_default_context())
-    net_connected = True
+        ## Set up http request objects
+        pool = socketpool.SocketPool(wifi.radio)
+        requests = adafruit_requests.Session(pool, ssl.create_default_context())
+        net_connected = True
+    except: 
+        print("Connecting to fallback network %s"%secrets["heatseek_wifi_ssid"])
+        wifi.radio.connect(secrets["heatseek_wifi_ssid"], secrets["heatseek_wifi_password"])
+        print("Connected to %s!"%secrets["heatseek_wifi_ssid"])
+        print("My IP address is", wifi.radio.ipv4_address)
+
+        ## Set up http request objects
+        pool = socketpool.SocketPool(wifi.radio)
+        requests = adafruit_requests.Session(pool, ssl.create_default_context())
+        net_connected = True
+        
     ## Set the time if this is a cold boot
     if not alarm.wake_alarm:
         print("Cold boot. Fetching updated time and setting realtime clock")
