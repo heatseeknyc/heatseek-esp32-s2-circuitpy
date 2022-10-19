@@ -55,7 +55,7 @@ def handle_quiet_mode(new_voltage):
         f.close()
         print('QUIET MODE DATA - new voltage:{}, last_voltage:{}'.format(new_voltage, last_voltage))
         if(new_voltage > float(last_voltage) + VOLT_DIFF_FOR_CHARGE):
-            fade_up_status(50, 0, 128, 3, 2)
+            fade_up_status(128, 128, 128, 4, 1)
             print("QUIET MODE ENDED - battery is charging. Unit must be plugged in")
             print("Clearing battery.txt and quiet.txt")
             # Higher voltage even with some offset! We're plugged in
@@ -71,14 +71,14 @@ def handle_quiet_mode(new_voltage):
                 print("QUIET MODE: overwriting battery.txt low water mark")
                 with open('battery.txt', "w") as bf:
                     bf.write('{}\n'.format(new_voltage))
-            fade_status(50, 0, 128, 3, 2)
+            flash_status(80, 0, 128, 2, 1)
             print("QUIET MODE: Sleeping for "+ str(QUIET_MODE_SLEEP_LENGTH / 60) + " min")
             deep_sleep(QUIET_MODE_SLEEP_LENGTH)
     else:
         print("QUIET MODE: writing new battery.txt")
         with open('battery.txt', "w") as bf:
             bf.write('{}\n'.format(new_voltage))
-            fade_status(50, 0, 128, 3, 2)
+            flash_status(80, 0, 128, 2, 1)
             print("QUIET MODE: Sleeping for "+ str(QUIET_MODE_SLEEP_LENGTH / 60) + " min")
             deep_sleep(QUIET_MODE_SLEEP_LENGTH)
             
@@ -141,18 +141,19 @@ def flash_warning(red=128, green=0, blue=0, red2=128, green2=128, blue2=0,flash_
         time.sleep(flash_length)
     pixels.fill((0, 0, 0))
 
-def fade_status(red=0, green=0, blue=128, fade_length=3, repeat=1):
+
+def fade_status(red=0, green=0, blue=128, fade_length=2, repeat=1):
     for x in range(0, repeat):
-        for y in range(1, fade_length * 100):
-            pixels.fill((int(red / y), int(green / y), int(blue / y)))
+        for y in range(100, 1, -1):
+            pixels.fill((int(pow(red, y/100)), int(pow(green, y/100)), int(pow(blue, y/100))))
             time.sleep(fade_length / 100)
     pixels.fill((0, 0, 0))    
 
 
-def fade_up_status(red=128, green=128, blue=128, fade_length=3, repeat=1):
+def fade_up_status(red=128, green=128, blue=128, fade_length=2, repeat=1):
     for x in range(0, repeat):
-        for y in range(fade_length * 100, 1):
-            pixels.fill((int(red / y), int(green / y), int(blue / y)))
+        for y in range(1, 100):
+            pixels.fill((int(pow(red, y/100)), int(pow(green, y/100)), int(pow(blue, y/100))))
             time.sleep(fade_length / 100)
     pixels.fill((0, 0, 0))  
 
@@ -197,11 +198,11 @@ try:
     sensor = adafruit_ahtx0.AHTx0(i2c)
     # If the sensor is connected, go to read only mode so we can write temperatures
     print("\nSENSOR DETECTED, attempting to writing to temperatures.txt, CIRCUITPY is read-only by computer")
-    flash_status(0,128,0,0.5,1)
+    flash_status(0,128,0,1,1)
     # storage.remount("", switch.value)
 except ValueError:
     print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is writeable by computer")
-    flash_status(0,0,128,0.5,1)
+    flash_status(0,0,128,1,1)
 
 reading_interval = int(secrets["reading_interval"])
 net_connected = False
@@ -220,7 +221,7 @@ try:
         pool = socketpool.SocketPool(wifi.radio)
         requests = adafruit_requests.Session(pool, ssl.create_default_context())
         net_connected = True
-        flash_status(0,128,0,1,2)
+        flash_status(0,128,0,0.5,2)
     except: 
         print("Connecting to fallback network %s"%secrets["heatseek_wifi_ssid"])
         wifi.radio.connect(secrets["heatseek_wifi_ssid"], secrets["heatseek_wifi_password"])
@@ -230,12 +231,12 @@ try:
         pool = socketpool.SocketPool(wifi.radio)
         requests = adafruit_requests.Session(pool, ssl.create_default_context())
         net_connected = True
-        flash_status(0,128,0,1,2)
+        flash_status(0,128,0,0.5,2)
         
     ## Set the time if this is a cold boot
     if not alarm.wake_alarm:
         print("Cold boot. Fetching updated time and setting realtime clock")
-
+        fade_up_status(0,128,0,3,1)
         response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
         if response.status_code == 200:
             r.datetime = time.localtime(response.json()['unixtime'])
