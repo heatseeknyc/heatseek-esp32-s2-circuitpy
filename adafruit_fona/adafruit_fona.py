@@ -538,7 +538,10 @@ class FONA:
         c_min = int(c_time.split(':')[1])
         c_sec = int(c_time.split(':')[2].split('-')[0])
         c_tz = int(c_time.split(':')[2].split('-')[1])  # tz is in 15 min increments from GSM time, 
+        # This assumes a timezone that is negative GMT/GSM time. notations like +8 would fail
+        # but this device will not be used outside of north america so this works for us. 
         local_timestamp = time.mktime((c_year, c_month, c_day, c_hour, c_min, c_sec, -1, -1, -1))
+        # Get the UTC timestamp by adding back the 15 minute increments from the TZ offset
         utc_timestamp = local_timestamp + (c_tz * 15 * 60)
         return utc_timestamp 
 
