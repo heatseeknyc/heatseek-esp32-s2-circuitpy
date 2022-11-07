@@ -44,6 +44,8 @@ reset_pin.direction = digitalio.Direction.INPUT
 
 LTE_SHIELD_POWER_PULSE_PERIOD = 3.2
 LTE_RESET_PULSE_PERIOD = 10.0
+## SMS relay number - should be a twilio number and entered as an integer with country code
+SMS_RELAY_NUMBER = 16469709199
 
 ###########
 # Get wifi details and more from a secrets.py file
@@ -82,7 +84,7 @@ def init_sms_board():
         print("Attaching to network...")
         time.sleep(0.5)
     print("Attached!")
-    ## END OF FUNCTION init_sms_board
+## END OF FUNCTION init_sms_board
 
 def deep_sleep(secs):
     fade_status(0, 0, 128, 3, 1)
@@ -255,58 +257,59 @@ except ValueError:
 
 reading_interval = int(secrets["reading_interval"])
 net_connected = False
-try: 
-    ## #########
-    ## Internal "try" statement attempts to connect to both the tenant wifi
-    ## and the heatseek wifi, so that in almost all cases we get a valid datetime
-    ## on first boot and can use that to keep time during transit
-    try:
-        print("Connecting to %s"%secrets["tenant_wifi_ssid"])
-        wifi.radio.connect(secrets["tenant_wifi_ssid"], secrets["tenant_wifi_password"])
-        print("Connected to %s!"%secrets["tenant_wifi_ssid"])
-        print("My IP address is", wifi.radio.ipv4_address)
+if (secrets['sms_mode'] != "true"):
+    try: 
+        ## #########
+        ## Internal "try" statement attempts to connect to both the tenant wifi
+        ## and the heatseek wifi, so that in almost all cases we get a valid datetime
+        ## on first boot and can use that to keep time during transit
+        try:
+            print("Connecting to %s"%secrets["tenant_wifi_ssid"])
+            wifi.radio.connect(secrets["tenant_wifi_ssid"], secrets["tenant_wifi_password"])
+            print("Connected to %s!"%secrets["tenant_wifi_ssid"])
+            print("My IP address is", wifi.radio.ipv4_address)
 
-        ## Set up http request objects
-        pool = socketpool.SocketPool(wifi.radio)
-        requests = adafruit_requests.Session(pool, ssl.create_default_context())
-        net_connected = True
-        flash_status(0,128,0,0.5,2)
-    except: 
-        print("Connecting to fallback network %s"%secrets["heatseek_wifi_ssid"])
-        wifi.radio.connect(secrets["heatseek_wifi_ssid"], secrets["heatseek_wifi_password"])
-        print("Connected to %s!"%secrets["heatseek_wifi_ssid"])
-        print("My IP address is", wifi.radio.ipv4_address)
-        ## Set up http request objects
-        pool = socketpool.SocketPool(wifi.radio)
-        requests = adafruit_requests.Session(pool, ssl.create_default_context())
-        net_connected = True
-        flash_status(0,128,0,0.5,2)
-        
-    ## Set the time if this is a cold boot
-    if not alarm.wake_alarm:
-        print("Cold boot. Fetching updated time and setting realtime clock")
-        fade_up_status(0,128,0,3,1)
-        response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
-        if response.status_code == 200:
-            r.datetime = time.localtime(response.json()['unixtime'])
-            print(f"System Time: {r.datetime}")
+            ## Set up http request objects
+            pool = socketpool.SocketPool(wifi.radio)
+            requests = adafruit_requests.Session(pool, ssl.create_default_context())
+            net_connected = True
+            flash_status(0,128,0,0.5,2)
+        except: 
+            print("Connecting to fallback network %s"%secrets["heatseek_wifi_ssid"])
+            wifi.radio.connect(secrets["heatseek_wifi_ssid"], secrets["heatseek_wifi_password"])
+            print("Connected to %s!"%secrets["heatseek_wifi_ssid"])
+            print("My IP address is", wifi.radio.ipv4_address)
+            ## Set up http request objects
+            pool = socketpool.SocketPool(wifi.radio)
+            requests = adafruit_requests.Session(pool, ssl.create_default_context())
+            net_connected = True
+            flash_status(0,128,0,0.5,2)
+            
+        ## Set the time if this is a cold boot
+        if not alarm.wake_alarm:
+            print("Cold boot. Fetching updated time and setting realtime clock")
+            fade_up_status(0,128,0,3,1)
+            response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
+            if response.status_code == 200:
+                r.datetime = time.localtime(response.json()['unixtime'])
+                print(f"System Time: {r.datetime}")
+            else:
+                print("Setting time failed")
         else:
-            print("Setting time failed")
-    else:
-        print("Waking up from sleep, RTC value after deep sleep was ")
-        print(f"System Time: {r.datetime}")
-except ConnectionError:
-    print("Could not connect to network.")
-    flash_warning()
-    net_connected = False
-except ValueError:
-    print("Time response was invalid (no connection or bad data)")
-    flash_warning()
-    net_connected = False
-except:
-    print("An error occured connecting to the network or time server")
-    flash_warning()
-    net_connected = False
+            print("Waking up from sleep, RTC value after deep sleep was ")
+            print(f"System Time: {r.datetime}")
+    except ConnectionError:
+        print("Could not connect to network.")
+        flash_warning()
+        net_connected = False
+    except ValueError:
+        print("Time response was invalid (no connection or bad data)")
+        flash_warning()
+        net_connected = False
+    except:
+        print("An error occured connecting to the network or time server")
+        flash_warning()
+        net_connected = False
 
 # ensure the time matches the RTC's time
 time.struct_time(r.datetime)
@@ -338,9 +341,12 @@ try:
         "sp": secrets["reading_interval"],
         "cell_version": CODE_VERSION,
     }
-    
+
     send_success = False
-    if(net_connected): 
+
+    if (secrets['sms_mode'] == "true"):
+        send_success = fona.send_sms(SMS_RELAY_NUMBER, str(heatseek_data))
+    elif(net_connected): 
         response = requests.post(HEATSEEK_URL, data=heatseek_data)
         if response.status_code == 200:
             print("SUCCESS sending to Heat Seek at {}".format(time.time()))

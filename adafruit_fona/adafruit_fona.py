@@ -516,19 +516,13 @@ class FONA:
         return True
 
     def get_cell_datetime(self) -> str: 
-        # cell_datetime = "22/11/04,18:25:03-16"
-        #fona._uart_write(b'AT+CCLK?\r\n')
-
         dts = self._get_reply(b"AT+CCLK?")
         cell_datetime = dts[1][dts[1].find(b':')+2 :].strip(b'"')
         return cell_datetime.decode('utf-8')
-        ## This just gets the date
-        # if self._send_parse_reply(b"AT+CCLK?", b'', idx=0):
-        #     return self._buf.strip('"')
 
     def get_timestamp(self) -> int:
+        # EXAMPLE: 22/11/06,22:32:30-20
         cell_datetime = self.get_cell_datetime()
-        # print('CELL DATETIME:{}'.format(cell_datetime))
         c_date = cell_datetime.split(',')[0]
         c_time = cell_datetime.split(',')[1]
         c_year = int("20" + c_date.split('/')[0])
