@@ -28,7 +28,7 @@ pixels = neopixel.NeoPixel(board.NEOPIXEL, 1)
 # then paste your code with cmd-c/cmd-v 
 # then hit ctrl-d and hit enter. 
 
-# TODO: refactor to skip networking stuff and send SMS instead
+# DONE: refactor to skip networking stuff and send SMS instead
 # TODO: handle queue 
 # TODO: SMS receiver
 
@@ -46,6 +46,7 @@ LTE_SHIELD_POWER_PULSE_PERIOD = 3.2
 LTE_RESET_PULSE_PERIOD = 10.0
 ## SMS relay number - should be a twilio number and entered as an integer with country code
 SMS_RELAY_NUMBER = 16469709199
+SMS_QUEUE_LENGTH = 2
 
 ###########
 # Get wifi details and more from a secrets.py file
@@ -66,7 +67,7 @@ QUIET_MODE_SLEEP_LENGTH = 600
 
 
 def init_sms_board():
-    print("power pulse")
+    print("Initializing the Cell board with a power pulse")
     # Initialize the modem
     power_pin.switch_to_output()
     power_pin.value = False
@@ -84,6 +85,7 @@ def init_sms_board():
         print("Attaching to network...")
         time.sleep(0.5)
     print("Attached!")
+    time.sleep(0.5)
 ## END OF FUNCTION init_sms_board
 
 def deep_sleep(secs):
@@ -180,6 +182,59 @@ def transmit_queue(requests):
             return False
 ## END OF FUNCTION - transmit_queue(requests)
 
+def transmit_sms_queue():
+    print("Entered function: transmit_sms_queue")
+    if 'queue' not in os.listdir(): return
+    qfiles = os.listdir('/queue/')
+    heatseek_json = '{{"c":"{}","i":"{}","r":['.format(secrets["cell_id"], secrets["reading_interval"])
+    heatseek_json_ar = []
+    for qfile in qfiles:
+        if not qfile.startswith('1'):
+            print('Removing extraneous file in queue /queue/{}'.format(qfile))
+            os.remove('/queue/{}'.format(qfile))
+        if not qfile.endswith('.txt'):
+            print('Removing extraneous file in queue /queue/{}'.format(qfile))
+            os.remove('/queue/{}'.format(qfile))
+        ## File looks legit, open it
+        print("opening queued file /queue/{}".format(qfile))
+        f = open('/queue/{}'.format(qfile),"r")
+        ## get and parse it's data
+        qdata = f.read().splitlines()[0].split(',')
+        f.close()
+        ## make our heatseek data object with that queued data
+        
+        heatseek_json_ar.append('{{"ti":"{}","te":"{}","h":"{}"}}'.format((int(qdata[0]) - 1667875724), round((float(qdata[1])),1), round(float(qdata[2]),1)))
+    heatseek_json += (",".join(heatseek_json_ar))
+    heatseek_json += ']}'
+    send_success = False
+    print("Sending queued data file /queue/{}".format(qfile))
+    send_success = fona.send_sms(SMS_RELAY_NUMBER, str(heatseek_json))
+    if send_success:
+        print("SUCCESS sending queued to Heat Seek at {}".format(time.time()))
+        clear_queued_files()
+        return True
+    else:
+        print("Sending queued heatseek data failed")
+        return False
+## END OF FUNCTION - transmit_sms_queue(requests)
+
+def clear_queued_files():
+    if 'queue' not in os.listdir(): return
+    qfiles = os.listdir('/queue/')
+    for qfile in qfiles:
+        os.remove('/queue/{}'.format(qfile))
+
+def write_queue_file():
+    if 'queue' not in os.listdir():
+        os.mkdir('queue')
+    with open("/queue/{}.txt".format(time.time()), "a") as qp:
+        fade_status(128, 128, 0, 2, 2)
+        print("Couldn't send or batching SMS msgs, writing a queue file")
+        print('{},{},{}'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
+        qp.write('{},{},{}\n'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
+        qp.flush()
+        qp.close()
+
 def flash_status(red=128, green=128, blue=128, flash_length=0.5, repeat=1):
     for x in range(0, repeat):
         pixels.fill((red, green, blue))
@@ -232,7 +287,10 @@ print(f"Time at start: {r.datetime}")
 
 if (secrets['sms_mode'] == "true"):
     init_sms_board()
-    r.datetime = time.localtime(fona.get_timestamp())
+    try:
+        r.datetime = time.localtime(fona.get_timestamp())
+    except:
+        flash_warning()
     print(f"Time after getting fona time: {r.datetime}")
 
 ## Check on the battery
@@ -345,7 +403,11 @@ try:
     send_success = False
 
     if (secrets['sms_mode'] == "true"):
-        send_success = fona.send_sms(SMS_RELAY_NUMBER, str(heatseek_data))
+        write_queue_file()
+        if 'queue' in os.listdir(): 
+            qfiles = os.listdir('/queue/')
+            if len(qfiles) >= SMS_QUEUE_LENGTH: 
+                send_success = transmit_sms_queue()
     elif(net_connected): 
         response = requests.post(HEATSEEK_URL, data=heatseek_data)
         if response.status_code == 200:
@@ -356,17 +418,8 @@ try:
         else:
             print("Sending heatseek data failed")
 
-
-    if(send_success == False):
-        if 'queue' not in os.listdir():
-            os.mkdir('queue')
-        with open("/queue/{}.txt".format(time.time()), "a") as qp:
-            fade_status(128, 128, 0, 2, 2)
-            print("Couldn't send, writing a queue file")
-            print('{},{},{}'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
-            qp.write('{},{},{}\n'.format(time.time(), ((sensor.temperature * 1.8) + 32), sensor.relative_humidity))
-            qp.flush()
-            qp.close()
+        if(send_success == False):
+            write_queue_file()
 
     # Create an alarm that will trigger at the next reading interval seconds from now.
     print('Deep sleep for reading interval ({}) until the next send'.format( reading_interval))
