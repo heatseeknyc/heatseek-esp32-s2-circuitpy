@@ -188,7 +188,8 @@ def transmit_sms_queue():
     qfiles = os.listdir('/queue/')
     heatseek_json = '{{"c":"{}","i":"{}","r":['.format(secrets["cell_id"], secrets["reading_interval"])
     heatseek_json_ar = []
-    for qfile in qfiles:
+    ## Get the files in batches of 2
+    for qfile in qfiles[0:SMS_QUEUE_LENGTH]:
         if not qfile.startswith('1'):
             print('Removing extraneous file in queue /queue/{}'.format(qfile))
             os.remove('/queue/{}'.format(qfile))
@@ -207,11 +208,15 @@ def transmit_sms_queue():
     heatseek_json += (",".join(heatseek_json_ar))
     heatseek_json += ']}'
     send_success = False
-    print("Sending queued data file /queue/{}".format(qfile))
     send_success = fona.send_sms(SMS_RELAY_NUMBER, str(heatseek_json))
     if send_success:
         print("SUCCESS sending queued to Heat Seek at {}".format(time.time()))
-        clear_queued_files()
+        for qfile in qfiles[0:SMS_QUEUE_LENGTH]:
+            os.remove('/queue/{}'.format(qfile))
+        qfiles = os.listdir('/queue/')
+        if len(qfiles) > 0:
+            transmit_sms_queue()
+        # TODO: call this again recursively if we still have files
         return True
     else:
         print("Sending queued heatseek data failed")
