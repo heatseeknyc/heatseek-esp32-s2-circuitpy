@@ -74,7 +74,7 @@ def init_sms_board():
     time.sleep(LTE_SHIELD_POWER_PULSE_PERIOD)
     # power_pin.switch_to_input()
 
-    uart = busio.UART(board.TX, board.RX, baudrate=9600)
+    uart = busio.UART(board.TX, board.RX, baudrate=115200)
     # uart = board.UART()
     global fona 
     fona = FONA(uart, reset_pin)
