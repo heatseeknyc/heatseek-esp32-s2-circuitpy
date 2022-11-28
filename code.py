@@ -22,16 +22,6 @@ import adafruit_fona.adafruit_fona_socket as cellular_socket
 
 pixels = neopixel.NeoPixel(board.NEOPIXEL, 1)
 
-
-# SKIFF NOTES 2022-11-06
-# When testing on the REPL, to paste code segments, ctrl-e puts you into paste mode
-# then paste your code with cmd-c/cmd-v 
-# then hit ctrl-d and hit enter. 
-
-# DONE: refactor to skip networking stuff and send SMS instead
-# TODO: handle queue 
-# TODO: SMS receiver
-
 ##################
 ## Set pins to safe values in case the sms board is attached
 ###################
@@ -272,7 +262,7 @@ def fade_up_status(red=128, green=128, blue=128, fade_length=2, repeat=1):
     pixels.fill((0, 0, 0))  
 
 ## MAIN CODE BLOCK
-
+reading_interval = int(secrets["reading_interval"])
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
 
@@ -283,29 +273,38 @@ for x in range(8):
     time.sleep(0.5)
 for x in range(8):
     led.value = not led.value
-    time.sleep(0.5)
+    time.sleep(0.25)
 
-print("Blinking done, now startinging the program")
-## Set up the realtime clock
-r = rtc.RTC()
-print(f"Time at start: {r.datetime}")
 
-if (secrets['sms_mode'] == "true"):
-    init_sms_board()
-    try:
-        r.datetime = time.localtime(fona.get_timestamp())
-    except:
-        flash_warning()
-    print(f"Time after getting fona time: {r.datetime}")
+try:
+    print("Blinking done, now startinging the program")
+    ## Set up the realtime clock
+    r = rtc.RTC()
+    print(f"Time at start: {r.datetime}")
 
-## Check on the battery
-print("LC709203F simple test")
-print("Make sure LiPoly battery is plugged into the board!")
+    if (secrets['sms_mode'] == "true"):
+        init_sms_board()
+        try:
+            r.datetime = time.localtime(fona.get_timestamp())
+        except:
+            flash_warning()
+        print(f"Time after getting fona time: {r.datetime}")
 
-battery_sensor = LC709203F(board.I2C())
+    ## Check on the battery
+    print("LC709203F simple test")
+    print("Make sure LiPoly battery is plugged into the board!")
 
-print("IC version:", hex(battery_sensor.ic_version))
-print("Battery: Mode: %s / %0.3f Volts / %0.1f %%" % (battery_sensor.power_mode, battery_sensor.cell_voltage, battery_sensor.cell_percent))
+    battery_sensor = LC709203F(board.I2C())
+
+    print("IC version:", hex(battery_sensor.ic_version))
+    print("Battery: Mode: %s / %0.3f Volts / %0.1f %%" % (battery_sensor.power_mode, battery_sensor.cell_voltage, battery_sensor.cell_percent))
+except Exception as e:
+    flash_warning()
+    print("\nERROR: Problem during startup.")
+    print('Error message: {}'.format(e))
+    print("Check your connections.")
+    print('Deep sleep for reading interval ({}) and try again'.format(reading_interval))
+    deep_sleep(reading_interval)
 
 try:
     i2c = board.I2C()  # uses board.SCL and board.SDA
@@ -317,8 +316,14 @@ try:
 except ValueError:
     print("\nNO SENSOR, not writing to temperatures.txt CIRCUITPY is writeable by computer")
     flash_status(0,0,128,1,1)
+except Exception as e:
+    flash_warning()
+    print("\nERROR: Problem during sensor startup.")
+    print('Error message: {}'.format(e))
+    print("Check your connections.")
+    print('Deep sleep for reading interval ({}) and try again'.format(reading_interval))
+    deep_sleep(reading_interval)
 
-reading_interval = int(secrets["reading_interval"])
 net_connected = False
 if (secrets['sms_mode'] != "true"):
     try: 
@@ -429,9 +434,7 @@ try:
     # Create an alarm that will trigger at the next reading interval seconds from now.
     print('Deep sleep for reading interval ({}) until the next send'.format( reading_interval))
     deep_sleep(reading_interval)
-except OSError as e:  # Typically when the filesystem isn't writeable...
-    if e.args[0] == 28:  # If the file system is full...
-        print("\nERROR: filesystem full\n")
+except Exception as e:  # Typically when the filesystem isn't writeable...
     flash_warning()
     print("\nWARN: not writing temp to file, or sending to Heat Seek")
     print("This is  likely because sensor is not attached and the filesystem was writable by USB")
