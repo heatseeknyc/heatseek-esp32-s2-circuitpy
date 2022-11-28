@@ -4,7 +4,6 @@ import board
 import digitalio
 import storage
 import adafruit_ahtx0
-import rtc
 
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
@@ -17,10 +16,6 @@ power_pin.direction = digitalio.Direction.INPUT
 reset_pin = digitalio.DigitalInOut(board.D10)
 reset_pin.direction = digitalio.Direction.INPUT
 #####################
-
-## Set up the realtime clock
-r = rtc.RTC()
-print(f"Time at start: {r.datetime}")
 
 try:
     i2c = board.I2C()  # uses board.SCL and board.SDA
