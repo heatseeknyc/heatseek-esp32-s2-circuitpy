@@ -353,19 +353,24 @@ if (secrets['sms_mode'] != "true"):
             net_connected = True
             flash_status(0,128,0,0.5,2)
             
-        ## Set the time if this is a cold boot
+        ## Was this a cold boot or a wake from sleep?
         if not alarm.wake_alarm:
-            print("Cold boot. Fetching updated time and setting realtime clock")
+            print("Cold boot.")
             fade_up_status(0,128,0,3,1)
-            response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
-            if response.status_code == 200:
-                r.datetime = time.localtime(response.json()['unixtime'])
-                print(f"System Time: {r.datetime}")
-            else:
-                print("Setting time failed")
         else:
             print("Waking up from sleep, RTC value after deep sleep was ")
             print(f"System Time: {r.datetime}")
+        
+        ## Always get a fresh time because this RTC will rapidly fall out
+        ## of sync in deep sleep (it runs very fast)
+        print("Fetching updated time and setting realtime clock")
+        response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
+        if response.status_code == 200:
+            r.datetime = time.localtime(response.json()['unixtime'])
+            print(f"System Time: {r.datetime}")
+        else:
+            print("Setting time failed")
+
     except ConnectionError:
         print("Could not connect to network.")
         flash_warning()
