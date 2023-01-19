@@ -48,7 +48,7 @@ except ImportError:
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
-CODE_VERSION = "F-CP-1.1.0"
+CODE_VERSION = "F-CP-1.1.1"
 VOLT_DIFF_FOR_CHARGE = 0.06
 QUIET_MODE_SLEEP_LENGTH = 600
 
