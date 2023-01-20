@@ -48,7 +48,7 @@ except ImportError:
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
-CODE_VERSION = "F-CP-1.1.1"
+CODE_VERSION = "F-CP-1.1.2"
 VOLT_DIFF_FOR_CHARGE = 0.06
 QUIET_MODE_SLEEP_LENGTH = 600
 
@@ -441,8 +441,11 @@ try:
     deep_sleep(reading_interval)
 except Exception as e:  # Typically when the filesystem isn't writeable...
     flash_warning()
-    print("\nWARN: not writing temp to file, or sending to Heat Seek")
-    print("This is  likely because sensor is not attached and the filesystem was writable by USB")
+    print("\nEXCEPTION: Final Try/Exception block triggered")
+    print('\nError message: {}'.format(e))
+    print("\nnot writing temp to file, or sending to Heat Seek")
+    print("This is usually because sensor is not attached and the filesystem was writable by USB")
+    print("NOTE: This can also happen if you plug in the sensor after the USB cord or battery, without resetting")
     print("If this is unexpected, be sure you reset the feather after plugging in the sensor to run boot.py again.")
     print('Deep sleep for reading interval ({}) and try again'.format(reading_interval))
     deep_sleep(reading_interval)
