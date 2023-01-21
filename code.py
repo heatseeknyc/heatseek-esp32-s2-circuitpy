@@ -48,7 +48,7 @@ except ImportError:
 
 ## URL
 HEATSEEK_URL = "http://relay.heatseek.org/temperatures"
-CODE_VERSION = "F-CP-1.1.2"
+CODE_VERSION = "F-CP-1.1.3"
 VOLT_DIFF_FOR_CHARGE = 0.06
 QUIET_MODE_SLEEP_LENGTH = 600
 
@@ -367,7 +367,10 @@ if (secrets['sms_mode'] != "true"):
         response = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
         if response.status_code == 200:
             r.datetime = time.localtime(response.json()['unixtime'])
-            print(f"System Time: {r.datetime}")
+            print(f"Got new System Time From WorldTimeApi.org: {r.datetime}")
+            # ensure the time matches the RTC's time
+            print(f"setting RTC")
+            time.struct_time(r.datetime)
         else:
             print("Setting time failed")
 
@@ -379,13 +382,19 @@ if (secrets['sms_mode'] != "true"):
         print("Time response was invalid (no connection or bad data)")
         flash_warning()
         net_connected = False
-    except:
-        print("An error occured connecting to the network or time server")
+    except Exception as e:  
+        print("An error occurred in the network connection and time setting block")
+        print('\nError message: {}'.format(e))
         flash_warning()
         net_connected = False
-
-# ensure the time matches the RTC's time
-time.struct_time(r.datetime)
+        try:
+            with open("/errors.txt", "a") as fp:
+                print("writing to error log")
+                fp.write('{},{}\n'.format(time.time(), e))
+                fp.flush()
+                fp.close()
+        except:
+            print("couldn't write to error log")
 
 ## Check if the time is valid 
 ##   (greater than oct 10 2022 timestamp 1665240748), sleep if not
@@ -424,14 +433,21 @@ try:
             if len(qfiles) >= SMS_QUEUE_LENGTH: 
                 send_success = transmit_sms_queue()
     elif(net_connected): 
-        response = requests.post(HEATSEEK_URL, data=heatseek_data)
-        if response.status_code == 200:
-            print("SUCCESS sending to Heat Seek at {}".format(time.time()))
-            send_success = True
-            flash_status(128,128,128, 0.5, 3)
-            transmit_queue(requests)
-        else:
-            print("Sending heatseek data failed")
+        try:
+            response = requests.post(HEATSEEK_URL, data=heatseek_data)
+            if response.status_code == 200:
+                print("SUCCESS sending to Heat Seek at {}".format(time.time()))
+                send_success = True
+                flash_status(128,128,128, 0.5, 3)
+                transmit_queue(requests)
+            else:
+                print("Sending heatseek data failed")
+        except Exception as e:
+            ## Something went wrong with the transmit, even though we had a connection
+            print("Exception when sending to heatseek")
+            print('\nError message: {}'.format(e))
+            
+            send_success = False
 
         if(send_success == False):
             write_queue_file()
@@ -441,6 +457,14 @@ try:
     deep_sleep(reading_interval)
 except Exception as e:  # Typically when the filesystem isn't writeable...
     flash_warning()
+    try:
+        with open("/errors.txt", "a") as fp:
+            print("writing to error log")
+            fp.write('{},{}\n'.format(time.time(), e))
+            fp.flush()
+            fp.close()
+    except:
+        print("couldn't write to error log")
     print("\nEXCEPTION: Final Try/Exception block triggered")
     print('\nError message: {}'.format(e))
     print("\nnot writing temp to file, or sending to Heat Seek")
